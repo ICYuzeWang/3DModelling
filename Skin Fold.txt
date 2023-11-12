@@ -1,0 +1,71 @@
+
+import bpy
+import bmesh
+
+def apply_cloth_dynamics(mesh_name, target_group, level, is_arm=True):
+    mesh = bpy.data.objects[mesh_name]
+    
+    bpy.ops.object.select_all(action='DESELECT')
+    mesh.select_set(True)
+    bpy.context.view_layer.objects.active = mesh
+
+    # Set cloth mass based on the part (arm/abdomen) and the level
+    def set_cloth_mass(level, is_arm):
+        arm_masses = {
+            1: 300,
+            2: 600,
+            3: 1000,
+            4: 1500,
+            5: 2000
+        }
+        abdomen_masses = {
+            1: 1000,
+            2: 4000,
+            3: 7000,
+            4: 10000,
+            5: 15000
+        }
+        if is_arm:
+            return arm_masses.get(level, 1000)
+        else:
+            return abdomen_masses.get(level, 1000)
+
+    # Create new 'Skin' vertex group
+    vertex_group_target = mesh.vertex_groups.get(target_group, None)
+    vertex_group_skin = mesh.vertex_groups.new(name='Skin')
+    for v in mesh.data.vertices:
+        for g in v.groups:
+            if g.weight > 0.8 and g.group == vertex_group_target.index:
+                vertex_group_skin.add([v.index], weight=1, type='ADD')
+
+    # Create new vertex group "Pin"
+    vertex_group_pin = mesh.vertex_groups.new(name='Pin')
+    for v in mesh.data.vertices:
+        if vertex_group_skin.index not in [g.group for g in v.groups]:
+            vertex_group_pin.add([v.index], weight=1, type='ADD')
+
+    # Apply cloth physics system
+    cloth = mesh.modifiers.new(name='Cloth', type='CLOTH')
+    cloth.settings.vertex_group_mass = 'Pin'
+    cloth.settings.mass = set_cloth_mass(level, is_arm)
+    cloth.settings.tension_stiffness = 15
+    cloth.settings.compression_stiffness = 2
+    cloth.settings.bending_stiffness = 0.5
+    cloth.settings.shear_stiffness = 10
+
+    # Apply the cloth simulation and let it take effect
+    bpy.context.scene.frame_set(100)
+
+    # Apply the cloth modifier permanently
+    bpy.ops.object.modifier_apply(modifier='Cloth')
+
+def run_simulation(level, mesh_name="mesh"):
+    # Arm setup
+    apply_cloth_dynamics(mesh_name, "Arm", level, is_arm=True)
+
+    # Abdomen setup
+    apply_cloth_dynamics(mesh_name, "Abdomen", level, is_arm=False)
+
+# Input level and run simulation
+level_input = int(input("Enter the level (1-5): "))
+run_simulation(level_input)
